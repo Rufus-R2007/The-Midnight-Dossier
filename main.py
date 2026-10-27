@@ -23,8 +23,8 @@ def main() -> None:
         app = MidnightDossierApp(width=1366, height=768)
         print("[Smoke Test] App instantiated successfully.")
 
-        # Test switching across all screens
-        for screen_idx in range(4):
+        # Test switching across all screens (0: Title, 1: Board, 2: Timeline, 3: Toolkit, 4: Accusation)
+        for screen_idx in range(5):
             app.active_screen_idx = screen_idx
             app._update(0.016)
             app._render()
@@ -33,6 +33,10 @@ def main() -> None:
         # Test query execution in headless mode
         res = app.investigation_state.query_relationship("SUS-01", "EV-01", use_bfs=True)
         print(f"[Smoke Test] BFS path trace verified: {res['found']} (Edges: {res['edge_count']})")
+
+        # Test case restart
+        app.restart_investigation()
+        print("[Smoke Test] Case restart execution verified cleanly.")
 
         pygame.quit()
         print("[Smoke Test] All checks passed successfully.")

@@ -2,10 +2,11 @@
 Case Timeline View for The Midnight Dossier.
 Demonstrates CO2: Doubly Linked List bidirectional navigation and
 Sequential vs. Binary Search comparisons on chronological case events.
+Uses synchronized interactive buttons with visual hover states.
 """
 
 import pygame
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Callable
 from .theme import (
     BG_DARKEST, BG_DARK, BG_PANEL, BG_PANEL_ALT, BG_BORDER,
     TEXT_WHITE, TEXT_LIGHT, TEXT_MUTED, TEXT_GOLD, TEXT_CYAN,
@@ -16,13 +17,15 @@ from .theme import (
 from .investigation import InvestigationState
 from .dsa.linked_list import DoublyLinkedListNode
 from .dsa.searching import linear_search, binary_search
+from .ui_components import UIButton
 
 
 class CaseTimelineView:
     """Case Timeline Screen displaying chronological events and search comparisons."""
 
-    def __init__(self, investigation_state: InvestigationState) -> None:
+    def __init__(self, investigation_state: InvestigationState, on_locate_on_board: Optional[Callable[[str], None]] = None) -> None:
         self.state = investigation_state
+        self.on_locate_on_board = on_locate_on_board
         self.dll = self.state.case.timeline_dll
         self.current_node: Optional[DoublyLinkedListNode[dict]] = self.dll.head
         self.current_index: int = 0
@@ -31,46 +34,84 @@ class CaseTimelineView:
         self.selected_target_time: int = 1307  # 21:47 (Blackout)
         self.seq_search_result: Optional[dict] = None
         self.bin_search_result: Optional[dict] = None
+
+        # Interactive buttons
+        self.nav_buttons: List[UIButton] = []
+        self.preset_buttons: List[UIButton] = []
+        self.btn_locate: Optional[UIButton] = None
+
+        self._init_buttons()
+        self._run_search_comparison()
+
+    def _init_buttons(self) -> None:
+        self.btn_prev = UIButton(pygame.Rect(0, 0, 110, 32), "< Previous", callback=self._go_prev, font_size=11)
+        self.btn_next = UIButton(pygame.Rect(0, 0, 110, 32), "Next >", callback=self._go_next, font_size=11)
+        self.btn_first = UIButton(pygame.Rect(0, 0, 95, 32), "|< First", callback=self._go_first, font_size=11)
+        self.btn_last = UIButton(pygame.Rect(0, 0, 95, 32), ">| Latest", callback=self._go_last, font_size=11)
+        self.nav_buttons = [self.btn_prev, self.btn_next, self.btn_first, self.btn_last]
+
+        presets = [
+            (1307, "21:47 (Blackout)"),
+            (1316, "21:56 (Theft)"),
+            (1332, "22:12 (Van Exit)"),
+            (1315, "21:55 (Miss)"),
+        ]
+        self.preset_buttons = []
+        for time_val, plabel in presets:
+            btn = UIButton(
+                pygame.Rect(0, 0, 135, 26),
+                plabel,
+                callback=lambda tv=time_val: self._select_preset_time(tv),
+                font_size=11
+            )
+            self.preset_buttons.append(btn)
+
+    def _go_prev(self) -> None:
+        if self.current_node and self.current_node.prev:
+            self.current_node = self.current_node.prev
+            self.current_index = max(0, self.current_index - 1)
+
+    def _go_next(self) -> None:
+        if self.current_node and self.current_node.next:
+            self.current_node = self.current_node.next
+            self.current_index += 1
+
+    def _go_first(self) -> None:
+        if self.dll.head:
+            self.current_node = self.dll.head
+            self.current_index = 0
+
+    def _go_last(self) -> None:
+        if self.dll.tail:
+            self.current_node = self.dll.tail
+            self.current_index = self.dll.size() - 1
+
+    def _select_preset_time(self, time_val: int) -> None:
+        self.selected_target_time = time_val
         self._run_search_comparison()
 
     def handle_event(self, event: pygame.event.Event, rect: pygame.Rect) -> None:
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            mx, my = event.pos
-            rel_x = mx - rect.x
-            rel_y = my - rect.y
+        # Hover tracking
+        if event.type == pygame.MOUSEMOTION:
+            for btn in self.nav_buttons:
+                btn.check_hover(event.pos)
+            for btn in self.preset_buttons:
+                btn.check_hover(event.pos)
+            if self.btn_locate:
+                self.btn_locate.check_hover(event.pos)
 
-            # 1. Navigation buttons: [< Prev], [Next >], [First], [Last]
-            if 340 <= rel_y <= 380:
-                if 80 <= rel_x <= 180 and self.current_node and self.current_node.prev:
-                    self.current_node = self.current_node.prev
-                    self.current_index = max(0, self.current_index - 1)
-                elif 200 <= rel_x <= 300 and self.current_node and self.current_node.next:
-                    self.current_node = self.current_node.next
-                    self.current_index += 1
-                elif 320 <= rel_x <= 410 and self.dll.head:
-                    self.current_node = self.dll.head
-                    self.current_index = 0
-                elif 430 <= rel_x <= 520 and self.dll.tail:
-                    self.current_node = self.dll.tail
-                    self.current_index = self.dll.size() - 1
-
-            # 2. Timeline search presets
-            if 480 <= rel_y <= 515:
-                presets = [
-                    (80, 1307, "21:47 (Blackout)"),
-                    (230, 1316, "21:56 (Theft)"),
-                    (380, 1332, "22:12 (Van Exit)"),
-                    (530, 1315, "21:55 (Miss)"),
-                ]
-                for px, time_val, _ in presets:
-                    if px <= rel_x <= px + 130:
-                        self.selected_target_time = time_val
-                        self._run_search_comparison()
-                        break
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for btn in self.nav_buttons:
+                if btn.handle_event(event):
+                    return
+            for btn in self.preset_buttons:
+                if btn.handle_event(event):
+                    return
+            if self.btn_locate and self.btn_locate.handle_event(event):
+                return
 
     def _run_search_comparison(self) -> None:
         """Run sequential search on DLL vs binary search on indexed snapshot."""
-        # 1. Sequential search on Doubly Linked List
         events_list = self.dll.to_list()
         comparisons_seq = 0
         found_seq = False
@@ -115,27 +156,26 @@ class CaseTimelineView:
 
     def render(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
         """Render the complete timeline view."""
-        # Background
         pygame.draw.rect(surface, BG_DARKEST, rect)
 
-        font_h = FontManager.get(size=20, bold=True, serif=True)
-        font_sub = FontManager.get(size=14, bold=True)
-        font_b = FontManager.get(size=13, bold=False)
-        font_bold = FontManager.get(size=13, bold=True)
+        font_h = FontManager.get(size=18, bold=True, serif=True)
+        font_sub = FontManager.get(size=13, bold=True)
+        font_b = FontManager.get(size=12, bold=False)
+        font_bold = FontManager.get(size=12, bold=True)
         font_tiny = FontManager.get(size=11, bold=False)
 
         # Header Title
         title_surf = font_h.render("CASE CHRONOLOGY — DOUBLY LINKED TIMELINE", True, TEXT_GOLD)
-        surface.blit(title_surf, (rect.x + 30, rect.y + 24))
+        surface.blit(title_surf, (rect.x + 30, rect.y + 20))
 
         sub_text = "Bidirectional chronological event traversal powered by custom DoublyLinkedList ADT (CO2)."
         sub_surf = font_b.render(sub_text, True, TEXT_MUTED)
-        surface.blit(sub_surf, (rect.x + 30, rect.y + 52))
+        surface.blit(sub_surf, (rect.x + 30, rect.y + 46))
 
         # Main Event Display Card
         if self.current_node:
             data = self.current_node.data
-            card_rect = pygame.Rect(rect.x + 80, rect.y + 100, rect.width - 160, 220)
+            card_rect = pygame.Rect(rect.x + 50, rect.y + 78, rect.width - 100, 205)
             pygame.draw.rect(surface, BG_PANEL, card_rect, border_radius=6)
             pygame.draw.rect(surface, BG_BORDER, card_rect, width=1, border_radius=6)
 
@@ -144,116 +184,114 @@ class CaseTimelineView:
             next_txt = f"next: [{self.current_node.next.data['timestamp']}]" if self.current_node.next else "next: NULL (TAIL)"
             ptr_str = f"<- {prev_txt}  ====  [Node #{self.current_index + 1} of {self.dll.size()}]  ====  {next_txt} ->"
             ptr_surf = font_tiny.render(ptr_str, True, TEXT_CYAN)
-            surface.blit(ptr_surf, (card_rect.x + 20, card_rect.y + 14))
+            surface.blit(ptr_surf, (card_rect.x + 20, card_rect.y + 12))
 
-            pygame.draw.line(surface, BG_BORDER, (card_rect.x + 20, card_rect.y + 36), (card_rect.right - 20, card_rect.y + 36), 1)
+            pygame.draw.line(surface, BG_BORDER, (card_rect.x + 20, card_rect.y + 32), (card_rect.right - 20, card_rect.y + 32), 1)
 
             # Event Title & Timestamp
-            time_badge = pygame.Rect(card_rect.x + 20, card_rect.y + 48, 80, 28)
+            time_badge = pygame.Rect(card_rect.x + 20, card_rect.y + 44, 75, 26)
             pygame.draw.rect(surface, COLOR_VERIFIED, time_badge, border_radius=4)
             ts_surf = font_bold.render(data["timestamp"], True, TEXT_WHITE)
-            surface.blit(ts_surf, (time_badge.x + 18, time_badge.y + 6))
+            surface.blit(ts_surf, (time_badge.x + 16, time_badge.y + 5))
 
             title_surf = font_sub.render(data["title"], True, TEXT_WHITE)
-            surface.blit(title_surf, (card_rect.x + 115, card_rect.y + 52))
+            surface.blit(title_surf, (card_rect.x + 110, card_rect.y + 48))
 
             # Details
             loc_surf = font_tiny.render(f"Location: {data['location']} | Associated Person: {data['related_person']}", True, TEXT_GOLD)
-            surface.blit(loc_surf, (card_rect.x + 20, card_rect.y + 92))
+            surface.blit(loc_surf, (card_rect.x + 20, card_rect.y + 84))
 
             desc_surf = font_b.render(data["description"], True, TEXT_LIGHT)
-            surface.blit(desc_surf, (card_rect.x + 20, card_rect.y + 120))
+            surface.blit(desc_surf, (card_rect.x + 20, card_rect.y + 110))
 
-            ev_txt = f"Linked Corroborating Clue: [{data['evidence_id']}]"
+            ev_txt = f"Corroborating Evidence Attached: [{data['evidence_id']}]"
             ev_surf = font_tiny.render(ev_txt, True, TEXT_CYAN)
-            surface.blit(ev_surf, (card_rect.x + 20, card_rect.y + 160))
+            surface.blit(ev_surf, (card_rect.x + 20, card_rect.y + 148))
+
+            # "Locate on Evidence Board" Action Button
+            linked_ev_id = data["evidence_id"]
+            if self.on_locate_on_board:
+                self.btn_locate = UIButton(
+                    pygame.Rect(card_rect.right - 190, card_rect.y + 140, 170, 28),
+                    f"Locate [{linked_ev_id}] on Board",
+                    callback=lambda eid=linked_ev_id: self.on_locate_on_board(eid),
+                    font_size=10,
+                    bold=True,
+                    bg_color=BG_PANEL_ALT,
+                    text_color=TEXT_GOLD
+                )
+                self.btn_locate.render(surface)
 
         # Navigation Buttons
-        btn_y = rect.y + 340
-        btn_prev = pygame.Rect(rect.x + 80, btn_y, 100, 36)
-        btn_next = pygame.Rect(rect.x + 200, btn_y, 100, 36)
-        btn_first = pygame.Rect(rect.x + 320, btn_y, 90, 36)
-        btn_last = pygame.Rect(rect.x + 430, btn_y, 90, 36)
+        btn_y = rect.y + 295
+        self.btn_prev.update_pos(rect.x + 50, btn_y)
+        self.btn_next.update_pos(rect.x + 170, btn_y)
+        self.btn_first.update_pos(rect.x + 290, btn_y)
+        self.btn_last.update_pos(rect.x + 395, btn_y)
 
-        can_prev = self.current_node and self.current_node.prev is not None
-        can_next = self.current_node and self.current_node.next is not None
+        # Enable/Disable styling
+        self.btn_prev.is_active = bool(self.current_node and self.current_node.prev)
+        self.btn_next.is_active = bool(self.current_node and self.current_node.next)
 
-        for btn, label, active in [(btn_prev, "< Previous", can_prev),
-                                   (btn_next, "Next >", can_next),
-                                   (btn_first, "|< First", True),
-                                   (btn_last, ">| Latest", True)]:
-            bg = BG_PANEL_ALT if active else BG_DARK
-            txt_col = TEXT_WHITE if active else TEXT_MUTED
-            pygame.draw.rect(surface, bg, btn, border_radius=4)
-            pygame.draw.rect(surface, BG_BORDER, btn, width=1, border_radius=4)
-            lbl = font_bold.render(label, True, txt_col)
-            surface.blit(lbl, (btn.x + (btn.width - lbl.get_width()) // 2, btn.y + 10))
+        for btn in self.nav_buttons:
+            btn.render(surface)
 
         # Search Comparison Section (CO2)
-        sep_y = rect.y + 400
+        sep_y = rect.y + 345
         pygame.draw.line(surface, BG_BORDER, (rect.x + 30, sep_y), (rect.right - 30, sep_y), 1)
 
-        search_h = font_sub.render("TIMELINE SEARCH COMPARISON: SEQUENTIAL VS. BINARY SEARCH", True, TEXT_GOLD)
-        surface.blit(search_h, (rect.x + 30, sep_y + 16))
+        search_h = font_sub.render("TIMELINE SEARCH COMPARISON: SEQUENTIAL (DLL) VS. BINARY SEARCH (ARRAY)", True, TEXT_GOLD)
+        surface.blit(search_h, (rect.x + 30, sep_y + 12))
 
         desc_cmp = (
-            "Compare searching for a specific timeline event by timestamp: "
             "Sequential search traverses the Doubly Linked List node-by-node (O(n)), "
-            "while Binary Search operates on a sorted indexed snapshot array (O(log n))."
+            "whereas Binary Search operates on a sorted indexed snapshot array (O(log n))."
         )
-        surface.blit(font_tiny.render(desc_cmp, True, TEXT_MUTED), (rect.x + 30, sep_y + 42))
+        surface.blit(font_tiny.render(desc_cmp, True, TEXT_MUTED), (rect.x + 30, sep_y + 34))
 
         # Target Time Preset Buttons
-        presets = [
-            (80, 1307, "21:47 (Blackout)"),
-            (230, 1316, "21:56 (Theft)"),
-            (380, 1332, "22:12 (Van Exit)"),
-            (530, 1315, "21:55 (Miss)"),
-        ]
-        for px, time_val, plabel in presets:
-            btn_r = pygame.Rect(rect.x + px, sep_y + 70, 130, 28)
-            is_sel = (self.selected_target_time == time_val)
-            bg = COLOR_VERIFIED if is_sel else BG_PANEL
-            border = TEXT_GOLD if is_sel else BG_BORDER
-            pygame.draw.rect(surface, bg, btn_r, border_radius=4)
-            pygame.draw.rect(surface, border, btn_r, width=1, border_radius=4)
-            lbl_s = font_tiny.render(plabel, True, TEXT_WHITE if is_sel else TEXT_LIGHT)
-            surface.blit(lbl_s, (btn_r.x + 10, btn_r.y + 7))
+        p_x = rect.x + 50
+        p_y = sep_y + 56
+        for i, btn in enumerate(self.preset_buttons):
+            time_vals = [1307, 1316, 1332, 1315]
+            btn.is_active = (self.selected_target_time == time_vals[i])
+            btn.update_pos(p_x + i * 145, p_y)
+            btn.render(surface)
 
         # Comparison Result Cards
-        res_y = sep_y + 115
-        w_box = (rect.width - 180) // 2
+        res_y = sep_y + 95
+        w_box = (rect.width - 120) // 2
 
         # Sequential Search Card
-        seq_box = pygame.Rect(rect.x + 80, res_y, w_box, 130)
+        seq_box = pygame.Rect(rect.x + 50, res_y, w_box, 120)
         pygame.draw.rect(surface, BG_PANEL, seq_box, border_radius=5)
         pygame.draw.rect(surface, BG_BORDER, seq_box, width=1, border_radius=5)
 
-        s_title = font_bold.render("1. Sequential Search (Linked List)", True, TEXT_WHITE)
-        surface.blit(s_title, (seq_box.x + 14, seq_box.y + 12))
+        s_title = font_bold.render("1. Sequential Search (Doubly Linked List)", True, TEXT_WHITE)
+        surface.blit(s_title, (seq_box.x + 14, seq_box.y + 10))
 
         if self.seq_search_result:
             r = self.seq_search_result
             status = "FOUND" if r["found"] else "NOT FOUND"
             status_col = COLOR_VERIFIED if r["found"] else COLOR_UNCONFIRMED
-            surface.blit(font_tiny.render(f"Result: {status} (at index {r['index']})", True, status_col), (seq_box.x + 14, seq_box.y + 36))
-            surface.blit(font_tiny.render(f"Pointers Checked: {r['comparisons']} node(s)", True, TEXT_CYAN), (seq_box.x + 14, seq_box.y + 58))
-            surface.blit(font_tiny.render(f"Time Complexity: {r['time_complexity']}", True, TEXT_GOLD), (seq_box.x + 14, seq_box.y + 80))
-            surface.blit(font_tiny.render(r["explanation"], True, TEXT_MUTED), (seq_box.x + 14, seq_box.y + 102))
+            surface.blit(font_tiny.render(f"Result: {status} (at index {r['index']})", True, status_col), (seq_box.x + 14, seq_box.y + 32))
+            surface.blit(font_tiny.render(f"Pointers Checked: {r['comparisons']} node(s)", True, TEXT_CYAN), (seq_box.x + 14, seq_box.y + 52))
+            surface.blit(font_tiny.render(f"Time Complexity: {r['time_complexity']}", True, TEXT_GOLD), (seq_box.x + 14, seq_box.y + 72))
+            surface.blit(font_tiny.render(r["explanation"], True, TEXT_MUTED), (seq_box.x + 14, seq_box.y + 92))
 
         # Binary Search Card
-        bin_box = pygame.Rect(rect.x + 100 + w_box, res_y, w_box, 130)
+        bin_box = pygame.Rect(rect.x + 70 + w_box, res_y, w_box, 120)
         pygame.draw.rect(surface, BG_PANEL, bin_box, border_radius=5)
         pygame.draw.rect(surface, BG_BORDER, bin_box, width=1, border_radius=5)
 
-        b_title = font_bold.render("2. Binary Search (Indexed Array)", True, TEXT_WHITE)
-        surface.blit(b_title, (bin_box.x + 14, bin_box.y + 12))
+        b_title = font_bold.render("2. Binary Search (Indexed Array Snapshot)", True, TEXT_WHITE)
+        surface.blit(b_title, (bin_box.x + 14, bin_box.y + 10))
 
         if self.bin_search_result:
             r = self.bin_search_result
             status = "FOUND" if r["found"] else "NOT FOUND"
             status_col = COLOR_VERIFIED if r["found"] else COLOR_UNCONFIRMED
-            surface.blit(font_tiny.render(f"Result: {status} (at index {r['index']})", True, status_col), (bin_box.x + 14, bin_box.y + 36))
-            surface.blit(font_tiny.render(f"Comparisons: {r['comparisons']} step(s)", True, TEXT_CYAN), (bin_box.x + 14, bin_box.y + 58))
-            surface.blit(font_tiny.render(f"Time Complexity: {r['time_complexity']}", True, TEXT_GOLD), (bin_box.x + 14, bin_box.y + 80))
-            surface.blit(font_tiny.render(r["explanation"], True, TEXT_MUTED), (bin_box.x + 14, bin_box.y + 102))
+            surface.blit(font_tiny.render(f"Result: {status} (at index {r['index']})", True, status_col), (bin_box.x + 14, bin_box.y + 32))
+            surface.blit(font_tiny.render(f"Comparisons: {r['comparisons']} step(s)", True, TEXT_CYAN), (bin_box.x + 14, bin_box.y + 52))
+            surface.blit(font_tiny.render(f"Time Complexity: {r['time_complexity']}", True, TEXT_GOLD), (bin_box.x + 14, bin_box.y + 72))
+            surface.blit(font_tiny.render(r["explanation"], True, TEXT_MUTED), (bin_box.x + 14, bin_box.y + 92))

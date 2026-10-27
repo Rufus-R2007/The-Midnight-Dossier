@@ -447,6 +447,17 @@ class CaseData:
 
         self._populate_dsa_structures()
 
+    def reset(self) -> None:
+        """Reset all DSA structures to clean authored state."""
+        self.graph = Graph()
+        self.evidence_hash_table = HashTable[str, dict](capacity=17)
+        self.timeline_dll = DoublyLinkedList[dict]()
+        self.autocomplete_trie = Trie()
+        self.evidence_bst = BinarySearchTree[str, dict]()
+        self.urgent_leads_heap = MaxHeap[dict](key=lambda x: x["priority"])
+        self.routine_leads_queue = Queue[dict]()
+        self._populate_dsa_structures()
+
     def _populate_dsa_structures(self) -> None:
         """Populate custom DSA structures from authored case data."""
         # 1. Graph nodes

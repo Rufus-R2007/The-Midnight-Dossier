@@ -2,6 +2,7 @@
 Main Evidence Board View for The Midnight Dossier.
 Features draggable physical-style cards, pins, red connecting strings,
 interactive sidebar inspection, filter buttons, undo/redo, and relationship tracing.
+All interactive controls use strictly synchronized hitboxes with hover feedback.
 """
 
 import pygame
@@ -11,13 +12,14 @@ from .theme import (
     BG_DARKEST, BG_DARK, BG_PANEL, BG_PANEL_ALT, BG_BORDER,
     CORK_FRAME, PARCHMENT_CARD, PARCHMENT_LIGHT, PARCHMENT_DARK,
     CARD_BORDER, CARD_HOVER_BORDER, CARD_TEXT_MAIN, CARD_TEXT_MUTED,
-    PIN_BRASS, STRING_NORMAL, STRING_ACTIVE,
+    PIN_BRASS, STRING_NORMAL, STRING_ACTIVE, STRING_GLOW,
     COLOR_VERIFIED, COLOR_TESTIMONY, COLOR_UNCONFIRMED, COLOR_CONTRADICTORY,
     COLOR_SUSPECT, COLOR_LOCATION, COLOR_ARTIFACT,
     TEXT_WHITE, TEXT_LIGHT, TEXT_MUTED, TEXT_GOLD, TEXT_CYAN,
     FontManager, create_corkboard_surface, draw_pin, draw_curved_string, draw_suspect_silhouette
 )
 from .investigation import InvestigationState
+from .ui_components import UIButton
 
 
 class BoardCard:
@@ -30,7 +32,7 @@ class BoardCard:
         category: str,
         x: int,
         y: int,
-        width: int = 150,
+        width: int = 155,
         height: int = 100,
         metadata: Optional[dict] = None
     ) -> None:
@@ -46,6 +48,7 @@ class BoardCard:
         self.drag_offset_x = 0
         self.drag_offset_y = 0
         self.initial_pos = (x, y)
+        self.is_hovered = False
 
     @property
     def rect(self) -> pygame.Rect:
@@ -82,16 +85,23 @@ class EvidenceBoardView:
         self.search_active: bool = False
         self.autocomplete_results: List[Tuple[str, Any]] = []
 
+        # Interactive UI buttons
+        self.filter_buttons: List[UIButton] = []
+        self.board_action_buttons: List[UIButton] = []
+        self.sidebar_buttons: List[UIButton] = []
+        self.neighbor_buttons: List[Tuple[UIButton, str]] = []
+
         self._init_card_layout()
+        self._init_board_buttons()
 
     def _init_card_layout(self) -> None:
         """Create initial organized layout of cards on the board."""
         # 1. Suspects (Top row)
         suspect_positions = [
-            ("SUS-01", 60, 45),
-            ("SUS-02", 240, 45),
-            ("SUS-03", 420, 45),
-            ("SUS-04", 600, 45),
+            ("SUS-01", 60, 52),
+            ("SUS-02", 240, 52),
+            ("SUS-03", 420, 52),
+            ("SUS-04", 600, 52),
         ]
         for sid, sx, sy in suspect_positions:
             s_data = self.state.case.get_entity_by_id(sid)
@@ -102,18 +112,18 @@ class EvidenceBoardView:
 
         # 2. Key Evidence (Middle rows)
         evidence_positions = [
-            ("EV-01", 240, 190),  # Stolen Compass (Center)
-            ("EV-02", 60, 190),   # Maintenance Request
-            ("EV-03", 420, 190),  # CCTV Glitch
+            ("EV-01", 240, 195),  # Stolen Compass (Center)
+            ("EV-02", 60, 195),   # Maintenance Request
+            ("EV-03", 420, 195),  # CCTV Glitch
             ("EV-04", 60, 335),   # Keycard Scan
             ("EV-05", 240, 335),  # Missing Case
             ("EV-06", 420, 335),  # Van Departure
-            ("EV-07", 600, 190),  # Wire Snips
+            ("EV-07", 600, 195),  # Wire Snips
             ("EV-08", 600, 335),  # Sync Script
-            ("EV-09", 60, 480),   # Tea Room Statement
-            ("EV-10", 240, 480),  # Radio Audio
-            ("EV-11", 420, 480),  # Guard Permit
-            ("EV-12", 600, 480),  # Dinner Toll
+            ("EV-09", 60, 475),   # Tea Room Statement
+            ("EV-10", 240, 475),  # Radio Audio
+            ("EV-11", 420, 475),  # Guard Permit
+            ("EV-12", 600, 475),  # Dinner Toll
         ]
         for eid, ex, ey in evidence_positions:
             e_data = self.state.case.get_entity_by_id(eid)
@@ -124,11 +134,11 @@ class EvidenceBoardView:
 
         # 3. Locations (Bottom row / flanks)
         location_positions = [
-            ("LOC-01", 60, 620),
-            ("LOC-02", 215, 620),
-            ("LOC-03", 370, 620),
-            ("LOC-04", 525, 620),
-            ("LOC-05", 680, 620),
+            ("LOC-01", 60, 610),
+            ("LOC-02", 215, 610),
+            ("LOC-03", 370, 610),
+            ("LOC-04", 525, 610),
+            ("LOC-05", 680, 610),
         ]
         for lid, lx, ly in location_positions:
             loc_data = self.state.case.get_entity_by_id(lid)
@@ -136,6 +146,24 @@ class EvidenceBoardView:
                 self.cards[lid] = BoardCard(
                     lid, loc_data["name"], "location", lx, ly, width=140, height=85, metadata=loc_data
                 )
+
+    def _init_board_buttons(self) -> None:
+        """Initialize filter and action buttons with unified hitboxes."""
+        self.filter_buttons = [
+            UIButton(pygame.Rect(15, 12, 105, 26), "All (24)", callback=lambda: self.set_filter("ALL"), font_size=11),
+            UIButton(pygame.Rect(125, 12, 105, 26), "Suspects (4)", callback=lambda: self.set_filter("SUSPECTS"), font_size=11),
+            UIButton(pygame.Rect(235, 12, 105, 26), "Evidence (14)", callback=lambda: self.set_filter("EVIDENCE"), font_size=11),
+            UIButton(pygame.Rect(345, 12, 105, 26), "Locations (6)", callback=lambda: self.set_filter("LOCATIONS"), font_size=11),
+        ]
+        self.btn_reset = UIButton(pygame.Rect(0, 12, 95, 26), "Reset Layout", callback=self.reset_layout, font_size=11)
+        self.btn_undo = UIButton(pygame.Rect(0, 12, 60, 26), "Undo", callback=self._perform_undo, font_size=11)
+        self.btn_redo = UIButton(pygame.Rect(0, 12, 60, 26), "Redo", callback=self._perform_redo, font_size=11)
+        self.board_action_buttons = [self.btn_undo, self.btn_redo, self.btn_reset]
+
+    def set_filter(self, mode: str) -> None:
+        self.filter_mode = mode
+        for btn in self.filter_buttons:
+            btn.is_active = (mode in btn.text.upper())
 
     def reset_layout(self) -> None:
         """Reset all cards to default non-overlapping positions."""
@@ -147,13 +175,45 @@ class EvidenceBoardView:
 
     def handle_event(self, event: pygame.event.Event, board_rect: pygame.Rect, sidebar_rect: pygame.Rect) -> None:
         """Handle mouse clicks, drags, typing, and keyboard shortcuts."""
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+        # Update button hover states
+        if event.type == pygame.MOUSEMOTION:
             mx, my = event.pos
-
-            # Check if clicked inside board area
             if board_rect.collidepoint(mx, my):
                 rel_x = mx - board_rect.x
                 rel_y = my - board_rect.y
+                for btn in self.filter_buttons:
+                    btn.check_hover((rel_x, rel_y))
+                for btn in self.board_action_buttons:
+                    btn.check_hover((rel_x, rel_y))
+
+                for card in self.cards.values():
+                    card.is_hovered = card.rect.collidepoint((rel_x, rel_y))
+
+            elif sidebar_rect.collidepoint(mx, my):
+                rel_x = mx - sidebar_rect.x
+                rel_y = my - sidebar_rect.y
+                for btn in self.sidebar_buttons:
+                    btn.check_hover((rel_x, rel_y))
+                for btn, _ in self.neighbor_buttons:
+                    btn.check_hover((rel_x, rel_y))
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mx, my = event.pos
+
+            # 1. Clicks inside Board area
+            if board_rect.collidepoint(mx, my):
+                rel_x = mx - board_rect.x
+                rel_y = my - board_rect.y
+
+                # Check top filter buttons
+                for btn in self.filter_buttons:
+                    if btn.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": (rel_x, rel_y), "button": 1})):
+                        return
+
+                # Check board action buttons (Reset, Undo, Redo)
+                for btn in self.board_action_buttons:
+                    if btn.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": (rel_x, rel_y), "button": 1})):
+                        return
 
                 # Check cards in reverse (top-most card first)
                 clicked_card = None
@@ -171,12 +231,15 @@ class EvidenceBoardView:
                     clicked_card.is_dragging = True
                     clicked_card.drag_offset_x = rel_x - clicked_card.x
                     clicked_card.drag_offset_y = rel_y - clicked_card.y
+                    self.search_active = False
                 else:
                     self.search_active = False
 
-            # Check sidebar / query panel clicks
+            # 2. Clicks inside Sidebar area
             elif sidebar_rect.collidepoint(mx, my):
-                self._handle_sidebar_click(mx - sidebar_rect.x, my - sidebar_rect.y, sidebar_rect)
+                rel_x = mx - sidebar_rect.x
+                rel_y = my - sidebar_rect.y
+                self._handle_sidebar_click(rel_x, rel_y, sidebar_rect)
 
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             if self.dragged_card_id and self.dragged_card_id in self.cards:
@@ -201,7 +264,7 @@ class EvidenceBoardView:
 
                 # Clamp within board
                 card.x = max(10, min(board_rect.width - card.width - 10, new_x))
-                card.y = max(10, min(board_rect.height - card.height - 10, new_y))
+                card.y = max(45, min(board_rect.height - card.height - 10, new_y))
 
         elif event.type == pygame.KEYDOWN:
             # Undo / Redo shortcuts
@@ -242,6 +305,11 @@ class EvidenceBoardView:
                     self.state.theory_evidence_ids.remove(action["evidence_id"])
             elif action["type"] == "remove_theory":
                 self.state.theory_evidence_ids.append(action["evidence_id"])
+            elif action["type"] == "move_card":
+                # Restore original or previous pos
+                cid = action["entity_id"]
+                if cid in self.cards:
+                    self.cards[cid].x, self.cards[cid].y = self.cards[cid].initial_pos
 
     def _perform_redo(self) -> None:
         action = self.state.undo_redo.redo()
@@ -265,47 +333,32 @@ class EvidenceBoardView:
         return True
 
     def _handle_sidebar_click(self, lx: int, ly: int, rect: pygame.Rect) -> None:
-        """Handle clicks on buttons within the right inspection & query panel."""
-        # 1. "Add/Remove Theory" button
-        if 20 <= lx <= rect.width - 20 and 315 <= ly <= 350:
-            if self.selected_card_id and self.selected_card_id.startswith("EV-"):
-                self.state.toggle_theory_evidence(self.selected_card_id)
-
-        # 2. "Set as Source" button
-        elif 20 <= lx <= rect.width // 2 - 10 and 560 <= ly <= 590:
-            if self.selected_card_id:
-                self.query_from_id = self.selected_card_id
-
-        # 3. "Set as Target" button
-        elif rect.width // 2 + 10 <= lx <= rect.width - 20 and 560 <= ly <= 590:
-            if self.selected_card_id:
-                self.query_to_id = self.selected_card_id
-
-        # 4. "Toggle Algorithm: BFS vs DFS"
-        elif 20 <= lx <= rect.width - 20 and 600 <= ly <= 630:
-            self.query_use_bfs = not self.query_use_bfs
-
-        # 5. "Trace Connection (BFS/DFS)"
-        elif 20 <= lx <= rect.width - 20 and 640 <= ly <= 675:
-            if self.query_from_id and self.query_to_id:
-                self.state.query_relationship(self.query_from_id, self.query_to_id, use_bfs=self.query_use_bfs)
-
-        # 6. "Clear Trace"
-        elif 20 <= lx <= rect.width - 20 and 685 <= ly <= 710:
-            self.state.clear_active_path()
-
-        # 7. Search box activation
-        elif 20 <= lx <= rect.width - 20 and 445 <= ly <= 475:
+        """Handle clicks on sidebar buttons with synchronized rects."""
+        # 1. Search box activation
+        if hasattr(self, "search_box_rect") and self.search_box_rect.collidepoint((lx, ly)):
             self.search_active = True
+            return
 
-        # 8. Autocomplete item click
-        elif self.search_active and self.autocomplete_results and 480 <= ly <= 480 + len(self.autocomplete_results) * 26:
-            item_idx = (ly - 480) // 26
-            if 0 <= item_idx < len(self.autocomplete_results):
-                name, meta = self.autocomplete_results[item_idx]
-                self.selected_card_id = meta["id"]
-                self.state.mark_examined(meta["id"])
-                self.search_active = False
+        # 2. Autocomplete dropdown item click
+        if self.search_active and hasattr(self, "autocomplete_item_rects"):
+            for item_rect, meta_id in self.autocomplete_item_rects:
+                if item_rect.collidepoint((lx, ly)):
+                    self.selected_card_id = meta_id
+                    self.state.mark_examined(meta_id)
+                    self.search_active = False
+                    return
+
+        # 3. Sidebar dynamic buttons
+        for btn in self.sidebar_buttons:
+            if btn.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": (lx, ly), "button": 1})):
+                return
+
+        # 4. Direct connected neighbor buttons
+        for btn, neighbor_id in self.neighbor_buttons:
+            if btn.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": (lx, ly), "button": 1})):
+                self.selected_card_id = neighbor_id
+                self.state.mark_examined(neighbor_id)
+                return
 
     def render(self, surface: pygame.Surface, board_rect: pygame.Rect, sidebar_rect: pygame.Rect) -> None:
         """Render board, corkboard texture, connecting strings, cards, and sidebar."""
@@ -384,9 +437,17 @@ class EvidenceBoardView:
         card_rect = card.rect
         pygame.draw.rect(surface, PARCHMENT_CARD, card_rect, border_radius=5)
 
-        # Border (gold if selected/in active path)
-        border_color = CARD_HOVER_BORDER if (is_selected or is_in_path) else CARD_BORDER
-        border_width = 2 if (is_selected or is_in_path) else 1
+        # Border (gold if selected/in active path, bright if hovered)
+        if is_selected or is_in_path:
+            border_color = CARD_HOVER_BORDER
+            border_width = 2
+        elif card.is_hovered:
+            border_color = (180, 150, 80)
+            border_width = 2
+        else:
+            border_color = CARD_BORDER
+            border_width = 1
+
         pygame.draw.rect(surface, border_color, card_rect, width=border_width, border_radius=5)
 
         # Category header banner
@@ -407,7 +468,7 @@ class EvidenceBoardView:
         surface.blit(lbl_surf, (card.x + 8, card.y + 3))
 
         # Card Title
-        font_name = FontManager.get(size=13, bold=True, serif=True)
+        font_name = FontManager.get(size=12, bold=True, serif=True)
         words = card.name.split()
         if len(words) <= 2:
             line1 = card.name
@@ -447,59 +508,47 @@ class EvidenceBoardView:
         draw_pin(surface, card.pin_pos[0], card.pin_pos[1], radius=5)
 
     def _render_board_controls(self, surface: pygame.Surface) -> None:
-        """Render filter tabs and reset buttons at the top of the corkboard."""
-        font = FontManager.get(size=12, bold=True)
-        tabs = [
-            ("ALL", "All Entities (24)"),
-            ("SUSPECTS", "Suspects (4)"),
-            ("EVIDENCE", "Evidence (14)"),
-            ("LOCATIONS", "Locations (6)"),
-        ]
+        """Render filter tabs and reset buttons with unified interactive buttons."""
+        # Render filter tabs
+        for btn in self.filter_buttons:
+            btn.is_active = (self.filter_mode in btn.text.upper())
+            btn.render(surface)
 
-        tx = 15
-        ty = 12
-        for mode, title in tabs:
-            is_active = (self.filter_mode == mode)
-            bg = BG_PANEL_ALT if is_active else BG_DARK
-            border = TEXT_GOLD if is_active else BG_BORDER
-            text_col = TEXT_GOLD if is_active else TEXT_LIGHT
+        # Position and render board action buttons on the right
+        right_x = surface.get_width() - 105
+        self.btn_reset.update_pos(right_x, 12)
+        self.btn_reset.render(surface)
 
-            btn_rect = pygame.Rect(tx, ty, 115, 26)
-            pygame.draw.rect(surface, bg, btn_rect, border_radius=4)
-            pygame.draw.rect(surface, border, btn_rect, width=1, border_radius=4)
+        self.btn_redo.update_pos(right_x - 70, 12)
+        self.btn_redo.render(surface)
 
-            text_surf = font.render(title, True, text_col)
-            surface.blit(text_surf, (tx + 8, ty + 6))
-            tx += 122
-
-        # Reset Layout button
-        reset_rect = pygame.Rect(surface.get_width() - 110, ty, 95, 26)
-        pygame.draw.rect(surface, BG_DARK, reset_rect, border_radius=4)
-        pygame.draw.rect(surface, BG_BORDER, reset_rect, width=1, border_radius=4)
-        r_text = font.render("Reset Layout", True, TEXT_LIGHT)
-        surface.blit(r_text, (reset_rect.x + 10, ty + 6))
+        self.btn_undo.update_pos(right_x - 140, 12)
+        self.btn_undo.render(surface)
 
     def _render_sidebar(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
-        """Render the right investigation inspector and query controls."""
+        """Render the right investigation inspector and query controls with synchronized buttons."""
         # Panel background
         pygame.draw.rect(surface, BG_PANEL, rect)
         pygame.draw.line(surface, BG_BORDER, (rect.x, rect.y), (rect.x, rect.bottom), 2)
 
-        font_h = FontManager.get(size=16, bold=True, serif=True)
-        font_b = FontManager.get(size=13, bold=False)
-        font_bold = FontManager.get(size=13, bold=True)
+        font_h = FontManager.get(size=15, bold=True, serif=True)
+        font_b = FontManager.get(size=12, bold=False)
+        font_bold = FontManager.get(size=12, bold=True)
         font_tiny = FontManager.get(size=11, bold=False)
 
         x_pad = rect.x + 16
         w_inner = rect.width - 32
-        curr_y = rect.y + 16
+        curr_y = rect.y + 14
+
+        self.sidebar_buttons.clear()
+        self.neighbor_buttons.clear()
 
         # Header: Dossier Inspector
         hdr = font_h.render("CASE FILE DOSSIER", True, TEXT_GOLD)
         surface.blit(hdr, (x_pad, curr_y))
-        curr_y += 26
+        curr_y += 24
         pygame.draw.line(surface, BG_BORDER, (x_pad, curr_y), (x_pad + w_inner, curr_y), 1)
-        curr_y += 12
+        curr_y += 10
 
         # Selected Entity Details
         if self.selected_card_id:
@@ -511,79 +560,112 @@ class EvidenceBoardView:
                 # Entity Name & ID
                 name_surf = font_bold.render(name, True, TEXT_WHITE)
                 surface.blit(name_surf, (x_pad, curr_y))
-                curr_y += 20
+                curr_y += 18
 
                 sub_surf = font_tiny.render(f"Category: {cat.upper()} | ID: [{self.selected_card_id}]", True, TEXT_MUTED)
                 surface.blit(sub_surf, (x_pad, curr_y))
-                curr_y += 24
+                curr_y += 20
 
                 # Details / Alibi
                 desc = entity.get("description", "")
                 if "alibi" in entity:
                     desc += f"\nAlibi: {entity['alibi']}"
 
-                # Render multiline text
                 curr_y = self._render_wrapped_text(surface, desc, x_pad, curr_y, w_inner, font_b, TEXT_LIGHT)
-                curr_y += 8
+                curr_y += 6
 
                 # Source & Timestamp
                 if "source" in entity:
                     src_surf = font_tiny.render(f"Source: {entity['source']}", True, TEXT_GOLD)
                     surface.blit(src_surf, (x_pad, curr_y))
-                    curr_y += 18
+                    curr_y += 16
                 if "timestamp" in entity:
                     ts_surf = font_tiny.render(f"Timestamp: {entity['timestamp']}", True, TEXT_CYAN)
                     surface.blit(ts_surf, (x_pad, curr_y))
-                    curr_y += 20
+                    curr_y += 18
+
+                # Direct Connected Neighbors in Graph
+                neighbors = self.state.case.graph.get_neighbors(self.selected_card_id)
+                if neighbors:
+                    surface.blit(font_tiny.render("Connected Leads (Click to Inspect):", True, TEXT_MUTED), (x_pad, curr_y))
+                    curr_y += 16
+                    col_x = 0
+                    for edge in neighbors[:4]:
+                        n_node = self.state.case.graph.get_node(edge.target)
+                        n_title = n_node.name[:14] if n_node else edge.target
+                        btn_n = UIButton(
+                            pygame.Rect(x_pad + col_x, curr_y, (w_inner - 6) // 2, 22),
+                            f"-> {n_title}",
+                            font_size=10,
+                            bold=False,
+                            bg_color=BG_DARKEST
+                        )
+                        btn_n.render(surface)
+                        self.neighbor_buttons.append((btn_n, edge.target))
+                        if col_x == 0:
+                            col_x = (w_inner - 6) // 2 + 6
+                        else:
+                            col_x = 0
+                            curr_y += 25
+                    if col_x != 0:
+                        curr_y += 25
+                    curr_y += 4
 
                 # "Add to Working Theory" Button (for evidence)
                 if self.selected_card_id.startswith("EV-"):
                     in_theory = self.state.is_in_theory(self.selected_card_id)
-                    btn_rect = pygame.Rect(x_pad, curr_y, w_inner, 32)
-                    btn_color = COLOR_VERIFIED if in_theory else BG_PANEL_ALT
-                    pygame.draw.rect(surface, btn_color, btn_rect, border_radius=4)
-                    pygame.draw.rect(surface, TEXT_GOLD if in_theory else BG_BORDER, btn_rect, width=1, border_radius=4)
-                    btn_txt = "Pinned to Theory [Active]" if in_theory else "+ Add to Theory Hypothesis"
-                    t_surf = font_bold.render(btn_txt, True, TEXT_WHITE if in_theory else TEXT_LIGHT)
-                    surface.blit(t_surf, (btn_rect.x + (w_inner - t_surf.get_width()) // 2, btn_rect.y + 8))
-                    curr_y += 42
+                    btn_theory = UIButton(
+                        pygame.Rect(x_pad, curr_y, w_inner, 28),
+                        "Pinned to Theory [Active]" if in_theory else "+ Add to Theory Hypothesis",
+                        callback=lambda: self.state.toggle_theory_evidence(self.selected_card_id),
+                        font_size=11,
+                        bold=True,
+                        bg_color=COLOR_VERIFIED if in_theory else BG_PANEL_ALT,
+                        active_bg=COLOR_VERIFIED,
+                        is_active=in_theory
+                    )
+                    btn_theory.render(surface)
+                    self.sidebar_buttons.append(btn_theory)
+                    curr_y += 34
         else:
             none_surf = font_b.render("Select an evidence card on the board to view its dossier.", True, TEXT_MUTED)
             surface.blit(none_surf, (x_pad, curr_y))
-            curr_y += 40
+            curr_y += 30
 
         # Query & Relationship Tracing Section
-        curr_y = max(curr_y, rect.y + 360)
+        curr_y = max(curr_y, rect.y + 355)
         pygame.draw.line(surface, BG_BORDER, (x_pad, curr_y), (x_pad + w_inner, curr_y), 1)
         curr_y += 10
 
         q_hdr = font_h.render("RELATIONSHIP QUERY", True, TEXT_GOLD)
         surface.blit(q_hdr, (x_pad, curr_y))
-        curr_y += 24
+        curr_y += 22
 
         # Search Autocomplete field
-        search_box = pygame.Rect(x_pad, curr_y, w_inner, 28)
-        pygame.draw.rect(surface, BG_DARKEST, search_box, border_radius=4)
+        self.search_box_rect = pygame.Rect(x_pad, curr_y, w_inner, 26)
+        pygame.draw.rect(surface, BG_DARKEST, self.search_box_rect, border_radius=4)
         border_col = TEXT_GOLD if self.search_active else BG_BORDER
-        pygame.draw.rect(surface, border_col, search_box, width=1, border_radius=4)
+        pygame.draw.rect(surface, border_col, self.search_box_rect, width=1, border_radius=4)
         txt = self.search_text if self.search_text else "Type to search entities (Trie)..."
         txt_col = TEXT_WHITE if self.search_text else TEXT_MUTED
         s_surf = font_tiny.render(txt, True, txt_col)
-        surface.blit(s_surf, (search_box.x + 8, search_box.y + 7))
-        curr_y += 34
+        surface.blit(s_surf, (self.search_box_rect.x + 8, self.search_box_rect.y + 6))
+        curr_y += 30
 
         # Autocomplete dropdown
+        self.autocomplete_item_rects = []
         if self.search_active and self.autocomplete_results:
             for name, meta in self.autocomplete_results[:4]:
-                item_rect = pygame.Rect(x_pad, curr_y, w_inner, 24)
+                item_rect = pygame.Rect(x_pad, curr_y, w_inner, 22)
                 pygame.draw.rect(surface, BG_PANEL_ALT, item_rect)
                 pygame.draw.rect(surface, BG_BORDER, item_rect, width=1)
                 item_surf = font_tiny.render(f"{name} ({meta['type']})", True, TEXT_LIGHT)
-                surface.blit(item_surf, (item_rect.x + 6, item_rect.y + 4))
-                curr_y += 25
-            curr_y += 5
+                surface.blit(item_surf, (item_rect.x + 6, item_rect.y + 3))
+                self.autocomplete_item_rects.append((item_rect, meta["id"]))
+                curr_y += 23
+            curr_y += 4
 
-        # From / To endpoints display & selector buttons
+        # From / To endpoints display
         from_name = self.state.case.graph.nodes[self.query_from_id].name if self.query_from_id in self.state.case.graph.nodes else self.query_from_id
         to_name = self.state.case.graph.nodes[self.query_to_id].name if self.query_to_id in self.state.case.graph.nodes else self.query_to_id
 
@@ -593,44 +675,66 @@ class EvidenceBoardView:
 
         lbl_t = font_tiny.render(f"To:   {to_name[:24]}", True, TEXT_LIGHT)
         surface.blit(lbl_t, (x_pad, curr_y))
-        curr_y += 20
+        curr_y += 18
 
         # Endpoint Buttons
-        btn_w = (w_inner - 10) // 2
-        btn_from = pygame.Rect(x_pad, curr_y, btn_w, 26)
-        btn_to = pygame.Rect(x_pad + btn_w + 10, curr_y, btn_w, 26)
-        pygame.draw.rect(surface, BG_PANEL_ALT, btn_from, border_radius=4)
-        pygame.draw.rect(surface, BG_PANEL_ALT, btn_to, border_radius=4)
-        pygame.draw.rect(surface, BG_BORDER, btn_from, width=1, border_radius=4)
-        pygame.draw.rect(surface, BG_BORDER, btn_to, width=1, border_radius=4)
-
-        t_f = font_tiny.render("Set Selected as From", True, TEXT_LIGHT)
-        t_t = font_tiny.render("Set Selected as To", True, TEXT_LIGHT)
-        surface.blit(t_f, (btn_from.x + 6, btn_from.y + 6))
-        surface.blit(t_t, (btn_to.x + 12, btn_to.y + 6))
-        curr_y += 34
+        btn_w = (w_inner - 8) // 2
+        btn_from = UIButton(
+            pygame.Rect(x_pad, curr_y, btn_w, 24),
+            "Set as From",
+            callback=lambda: setattr(self, "query_from_id", self.selected_card_id) if self.selected_card_id else None,
+            font_size=10
+        )
+        btn_to = UIButton(
+            pygame.Rect(x_pad + btn_w + 8, curr_y, btn_w, 24),
+            "Set as To",
+            callback=lambda: setattr(self, "query_to_id", self.selected_card_id) if self.selected_card_id else None,
+            font_size=10
+        )
+        btn_from.render(surface)
+        btn_to.render(surface)
+        self.sidebar_buttons.extend([btn_from, btn_to])
+        curr_y += 28
 
         # Algorithm switch: BFS vs DFS
-        algo_btn = pygame.Rect(x_pad, curr_y, w_inner, 26)
-        pygame.draw.rect(surface, BG_DARKEST, algo_btn, border_radius=4)
-        pygame.draw.rect(surface, BG_BORDER, algo_btn, width=1, border_radius=4)
         algo_title = "Algorithm: BFS (Shortest Path)" if self.query_use_bfs else "Algorithm: DFS (Depth-First Route)"
-        algo_surf = font_tiny.render(algo_title, True, TEXT_GOLD)
-        surface.blit(algo_surf, (algo_btn.x + 10, algo_btn.y + 6))
-        curr_y += 32
+        btn_algo = UIButton(
+            pygame.Rect(x_pad, curr_y, w_inner, 24),
+            algo_title,
+            callback=lambda: setattr(self, "query_use_bfs", not self.query_use_bfs),
+            font_size=10,
+            text_color=TEXT_GOLD
+        )
+        btn_algo.render(surface)
+        self.sidebar_buttons.append(btn_algo)
+        curr_y += 28
 
         # "Trace Connection" Button
-        trace_btn = pygame.Rect(x_pad, curr_y, w_inner, 32)
-        pygame.draw.rect(surface, STRING_NORMAL, trace_btn, border_radius=4)
-        pygame.draw.rect(surface, STRING_ACTIVE, trace_btn, width=1, border_radius=4)
-        trace_surf = font_bold.render("Trace Connection Path", True, TEXT_WHITE)
-        surface.blit(trace_surf, (trace_btn.x + (w_inner - trace_surf.get_width()) // 2, trace_btn.y + 8))
-        curr_y += 40
+        btn_trace = UIButton(
+            pygame.Rect(x_pad, curr_y, w_inner - 55, 28),
+            "Trace Connection Path",
+            callback=lambda: self.state.query_relationship(self.query_from_id, self.query_to_id, use_bfs=self.query_use_bfs),
+            font_size=11,
+            bold=True,
+            bg_color=STRING_NORMAL,
+            hover_bg=STRING_ACTIVE,
+            text_color=TEXT_WHITE
+        )
+        btn_clear = UIButton(
+            pygame.Rect(x_pad + w_inner - 50, curr_y, 50, 28),
+            "Clear",
+            callback=self.state.clear_active_path,
+            font_size=10
+        )
+        btn_trace.render(surface)
+        btn_clear.render(surface)
+        self.sidebar_buttons.extend([btn_trace, btn_clear])
+        curr_y += 34
 
         # Query Result Box
         if self.state.last_query_result:
             q_res = self.state.last_query_result
-            res_box = pygame.Rect(x_pad, curr_y, w_inner, 100)
+            res_box = pygame.Rect(x_pad, curr_y, w_inner, 95)
             pygame.draw.rect(surface, BG_DARKEST, res_box, border_radius=4)
             pygame.draw.rect(surface, BG_BORDER, res_box, width=1, border_radius=4)
 
@@ -644,10 +748,10 @@ class EvidenceBoardView:
                 if len(q_res["path"]) > 5:
                     path_str += "..."
                 p_s = font_tiny.render(f"Path ({q_res['edge_count']} leads): {path_str}", True, TEXT_WHITE)
-                surface.blit(p_s, (res_box.x + 8, res_box.y + 24))
+                surface.blit(p_s, (res_box.x + 8, res_box.y + 22))
 
                 # Render explanation
-                self._render_wrapped_text(surface, q_res.get("explanation", ""), res_box.x + 8, res_box.y + 44, w_inner - 16, font_tiny, TEXT_LIGHT)
+                self._render_wrapped_text(surface, q_res.get("explanation", ""), res_box.x + 8, res_box.y + 40, w_inner - 16, font_tiny, TEXT_LIGHT)
 
     def _render_wrapped_text(
         self,
@@ -659,11 +763,9 @@ class EvidenceBoardView:
         font: pygame.font.Font,
         color: Tuple[int, int, int]
     ) -> int:
-        """Helper to render word-wrapped text, returning bottom y coordinate."""
         lines = text.split("\n")
         curr_y = y
-        line_height = font.get_linesize()
-
+        line_height = font.get_linesize() + 1
         for block in lines:
             words = block.split(" ")
             curr_line = ""
@@ -677,10 +779,8 @@ class EvidenceBoardView:
                         surface.blit(surf, (x, curr_y))
                         curr_y += line_height
                     curr_line = word
-
             if curr_line:
                 surf = font.render(curr_line, True, color)
                 surface.blit(surf, (x, curr_y))
                 curr_y += line_height
-
         return curr_y

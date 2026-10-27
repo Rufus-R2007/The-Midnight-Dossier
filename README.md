@@ -90,7 +90,9 @@ The-Midnight-Dossier/
 │   └── ALGORITHM_NOTES.md      # Algorithm derivations, pseudocode, and case solution
 ├── midnight_dossier/
 │   ├── __init__.py
-│   ├── app.py                  # Main window, navigation routing, and 60 FPS loop
+│   ├── app.py                  # Window controller, header, navigation, and 60 FPS loop
+│   ├── title_screen.py         # Cinematic title screen, animated threads, briefing & controls modals
+│   ├── ui_components.py        # Synchronized interactive UI button components with hover states
 │   ├── theme.py                # Color palette, font caching, procedural corkboard & silhouettes
 │   ├── case_data.py            # 24 authored entities, 35+ relationships, timeline, and solution
 │   ├── evidence_board.py       # Corkboard, draggable cards, catenary strings, and inspector
@@ -119,7 +121,8 @@ The-Midnight-Dossier/
     ├── test_sort_search.py     # Unit tests for all 4 sorting and 3 searching algorithms
     ├── test_trees_heap.py      # Unit tests for Trie autocomplete, BST traversals/deletions, MaxHeap
     ├── test_graph.py           # Unit tests for Graph adjacency, BFS shortest path, DFS cycles
-    └── test_case_logic.py      # Unit tests for case consistency, timeline order, and accusation scoring
+    ├── test_case_logic.py      # Unit tests for case consistency, timeline order, and accusation scoring
+    └── test_ui_components.py   # Unit tests for UI buttons, filters, views, and app lifecycle
 ```
 
 ---
@@ -156,11 +159,14 @@ The-Midnight-Dossier/
 ## 7. Controls & Navigation
 
 * **Mouse:**
+  * **Title Screen:** Click `INVESTIGATE CASE` to start/continue, `CASE BRIEFING` for modal dossier briefing, `DETECTIVE'S TOOLKIT (DSA)` to inspect structures, or `CONTROLS & SHORTCUTS` for keyboard reference.
   * **Click Evidence Card:** Select and inspect full dossier in sidebar.
   * **Click & Drag Card:** Reposition cards on the corkboard (records undo action).
   * **Filter Tabs:** Toggle between `All`, `Suspects`, `Evidence`, and `Locations`.
-  * **Top Navigation Bar:** Jump between `Evidence Board`, `Case Timeline`, `Detective's Toolkit`, and `Final Accusation`.
+  * **Direct Lead Neighbors:** Click on any related entity pill in the dossier sidebar to jump immediately to that card.
+  * **Top Navigation Bar:** Jump between `Main Menu` (0), `Evidence Board` (1), `Case Timeline` (2), `Detective's Toolkit` (3), and `Final Accusation` (4).
 * **Keyboard Shortcuts:**
+  * `0` or `Escape`: Navigate to **Main Menu / Title Screen**.
   * `1`: Navigate to **Investigation Board**.
   * `2`: Navigate to **Case Timeline**.
   * `3`: Navigate to **Detective's Toolkit**.
@@ -173,7 +179,7 @@ The-Midnight-Dossier/
 
 ## 8. Running Automated Tests
 
-The automated test suite covers all custom data structures, edge cases (underflow, empty inputs, collisions, duplicate values, cycles), and application game logic:
+The automated test suite covers all custom data structures, edge cases (underflow, empty inputs, collisions, duplicate values, cycles), UI components, button callbacks, and application game logic:
 
 ```bash
 python -m unittest discover tests
@@ -181,7 +187,7 @@ python -m unittest discover tests
 
 Expected output:
 ```
-Ran 46 tests in 0.003s
+Ran 53 tests in 0.016s
 OK
 ```
 

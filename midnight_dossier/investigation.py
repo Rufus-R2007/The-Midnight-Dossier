@@ -28,6 +28,19 @@ class InvestigationState:
         self.mark_examined("EV-01")
         self.mark_examined("SUS-01")
 
+    def reset(self) -> None:
+        """Reset the detective's investigation session to clean state."""
+        self.case.reset()
+        self.examined_entity_ids.clear()
+        self.theory_evidence_ids.clear()
+        self.active_entity_id = "SUS-01"
+        self.active_path.clear()
+        self.active_edges.clear()
+        self.last_query_result = None
+        self.undo_redo.clear()
+        self.mark_examined("EV-01")
+        self.mark_examined("SUS-01")
+
     def mark_examined(self, entity_id: str) -> None:
         """Record that player clicked or inspected this clue/entity."""
         if entity_id:
