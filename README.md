@@ -159,18 +159,19 @@ The-Midnight-Dossier/
 ## 7. Controls & Navigation
 
 * **Mouse:**
-  * **Title Screen:** Click `INVESTIGATE CASE` to start/continue, `CASE BRIEFING` for modal dossier briefing, `DETECTIVE'S TOOLKIT (DSA)` to inspect structures, or `CONTROLS & SHORTCUTS` for keyboard reference.
+  * **Title Screen:** Click `INVESTIGATE CASE` to start/continue, `HOW TO PLAY (GUIDE)` for detective field manual, `CASE BRIEFING` for incident report, `DETECTIVE'S TOOLKIT (DSA)` to inspect structures, or `CONTROLS & SHORTCUTS` for keyboard reference.
   * **Click Evidence Card:** Select and inspect full dossier in sidebar.
   * **Click & Drag Card:** Reposition cards on the corkboard (records undo action).
   * **Filter Tabs:** Toggle between `All`, `Suspects`, `Evidence`, and `Locations`.
   * **Direct Lead Neighbors:** Click on any related entity pill in the dossier sidebar to jump immediately to that card.
-  * **Top Navigation Bar:** Jump between `Main Menu` (0), `Evidence Board` (1), `Case Timeline` (2), `Detective's Toolkit` (3), and `Final Accusation` (4).
+  * **Top Navigation Bar:** Jump between `Main Menu` (0), `Evidence Board` (1), `Case Timeline` (2), `Detective's Toolkit` (3), `Final Accusation` (4), and `How to Play` (H).
 * **Keyboard Shortcuts:**
   * `0` or `Escape`: Navigate to **Main Menu / Title Screen**.
   * `1`: Navigate to **Investigation Board**.
   * `2`: Navigate to **Case Timeline**.
   * `3`: Navigate to **Detective's Toolkit**.
   * `4`: Navigate to **Final Accusation**.
+  * `H` or `F1`: Open / Close **How to Play Guide** overlay anytime.
   * `Ctrl + Z`: Undo last card reposition or theory modification.
   * `Ctrl + Y`: Redo last undone action.
   * `Type in Search Field`: Live suspect/clue autocomplete powered by Trie.
@@ -179,7 +180,7 @@ The-Midnight-Dossier/
 
 ## 8. Running Automated Tests
 
-The automated test suite covers all custom data structures, edge cases (underflow, empty inputs, collisions, duplicate values, cycles), UI components, button callbacks, and application game logic:
+The automated test suite covers all custom data structures, edge cases (underflow, empty inputs, collisions, duplicate values, cycles), UI components, button callbacks, Trie autocomplete, and application game logic:
 
 ```bash
 python -m unittest discover tests
@@ -187,7 +188,7 @@ python -m unittest discover tests
 
 Expected output:
 ```
-Ran 53 tests in 0.016s
+Ran 56 tests in 0.045s
 OK
 ```
 

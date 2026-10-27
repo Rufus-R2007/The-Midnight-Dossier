@@ -16,6 +16,7 @@ from .theme import (
     FontManager, create_corkboard_surface, draw_suspect_silhouette, draw_pin
 )
 from .ui_components import UIButton
+from .how_to_play import HowToPlayView
 
 
 class TitleScreenView:
@@ -28,8 +29,9 @@ class TitleScreenView:
         self.cork_size: Tuple[int, int] = (0, 0)
         self.anim_time = 0.0
 
-        # Modal state: None, "BRIEFING", "CONTROLS"
+        # Modal state: None, "BRIEFING", "CONTROLS", "HOW_TO_PLAY"
         self.active_modal: Optional[str] = None
+        self.how_to_play_view = HowToPlayView(on_close=lambda: self._set_modal(None))
 
         # Menu buttons
         self.buttons: List[UIButton] = []
@@ -37,7 +39,7 @@ class TitleScreenView:
 
     def _init_buttons(self) -> None:
         self.btn_play = UIButton(
-            pygame.Rect(0, 0, 240, 42),
+            pygame.Rect(0, 0, 240, 40),
             "INVESTIGATE CASE",
             callback=self.on_start_game,
             font_size=13,
@@ -49,8 +51,18 @@ class TitleScreenView:
             hover_text_color=TEXT_WHITE,
             border_radius=5
         )
+        self.btn_how_to_play = UIButton(
+            pygame.Rect(0, 0, 240, 34),
+            "HOW TO PLAY (GUIDE)",
+            callback=lambda: self._set_modal("HOW_TO_PLAY"),
+            font_size=12,
+            bold=True,
+            bg_color=BG_PANEL_ALT,
+            text_color=TEXT_GOLD,
+            border_radius=5
+        )
         self.btn_briefing = UIButton(
-            pygame.Rect(0, 0, 240, 36),
+            pygame.Rect(0, 0, 240, 34),
             "CASE BRIEFING & DOSSIER",
             callback=lambda: self._set_modal("BRIEFING"),
             font_size=12,
@@ -58,7 +70,7 @@ class TitleScreenView:
             border_radius=5
         )
         self.btn_toolkit = UIButton(
-            pygame.Rect(0, 0, 240, 36),
+            pygame.Rect(0, 0, 240, 34),
             "DETECTIVE'S TOOLKIT (DSA)",
             callback=self.on_open_toolkit,
             font_size=12,
@@ -66,7 +78,7 @@ class TitleScreenView:
             border_radius=5
         )
         self.btn_controls = UIButton(
-            pygame.Rect(0, 0, 240, 36),
+            pygame.Rect(0, 0, 240, 34),
             "CONTROLS & SHORTCUTS",
             callback=lambda: self._set_modal("CONTROLS"),
             font_size=12,
@@ -74,7 +86,7 @@ class TitleScreenView:
             border_radius=5
         )
         self.btn_quit = UIButton(
-            pygame.Rect(0, 0, 240, 34),
+            pygame.Rect(0, 0, 240, 32),
             "QUIT APPLICATION",
             callback=lambda: sys.exit(0),
             font_size=11,
@@ -88,6 +100,7 @@ class TitleScreenView:
         )
         self.buttons = [
             self.btn_play,
+            self.btn_how_to_play,
             self.btn_briefing,
             self.btn_toolkit,
             self.btn_controls,
@@ -101,7 +114,17 @@ class TitleScreenView:
         self.anim_time += dt
 
     def handle_event(self, event: pygame.event.Event, rect: pygame.Rect) -> None:
-        # If modal is open, check modal close button or ESC key
+        # Hover handling for menu buttons
+        if event.type == pygame.MOUSEMOTION:
+            for btn in self.buttons:
+                btn.check_hover(event.pos)
+
+        # If HOW_TO_PLAY modal is open, delegate directly to how_to_play_view
+        if self.active_modal == "HOW_TO_PLAY":
+            self.how_to_play_view.handle_event(event, rect)
+            return
+
+        # If other modal is open, check modal close button or ESC key
         if self.active_modal:
             if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_SPACE):
                 self.active_modal = None
@@ -150,8 +173,8 @@ class TitleScreenView:
 
         center_x = rect.x + rect.width // 2
         card_w = min(480, rect.width - 60)
-        card_h = 440
-        card_y = rect.y + max(40, (rect.height - card_h) // 2 - 20)
+        card_h = 490
+        card_y = rect.y + max(20, (rect.height - card_h) // 2 - 10)
 
         # Main Title Board Box
         title_box = pygame.Rect(center_x - card_w // 2, card_y, card_w, card_h)
@@ -166,24 +189,24 @@ class TitleScreenView:
 
         # Top confidential label
         top_lbl = f_meta.render("BLACKWOOD MUSEUM POLICE DOSSIER — CONFIDENTIAL", True, COLOR_CONTRADICTORY)
-        surface.blit(top_lbl, (center_x - top_lbl.get_width() // 2, card_y + 26))
+        surface.blit(top_lbl, (center_x - top_lbl.get_width() // 2, card_y + 24))
 
         # Big Title
         t_surf = f_title.render("THE MIDNIGHT DOSSIER", True, TEXT_GOLD)
-        surface.blit(t_surf, (center_x - t_surf.get_width() // 2, card_y + 48))
+        surface.blit(t_surf, (center_x - t_surf.get_width() // 2, card_y + 44))
 
         # Tagline
         tag_surf = f_tagline.render('"Every clue leaves a thread."', True, TEXT_LIGHT)
-        surface.blit(tag_surf, (center_x - tag_surf.get_width() // 2, card_y + 86))
+        surface.blit(tag_surf, (center_x - tag_surf.get_width() // 2, card_y + 80))
 
         sub_desc = f_meta.render("CASE 001: THE BLACKWOOD HEIST | DSA INVESTIGATION ENGINE", True, TEXT_CYAN)
-        surface.blit(sub_desc, (center_x - sub_desc.get_width() // 2, card_y + 112))
+        surface.blit(sub_desc, (center_x - sub_desc.get_width() // 2, card_y + 104))
 
-        pygame.draw.line(surface, BG_BORDER, (title_box.x + 30, card_y + 132), (title_box.right - 30, card_y + 132), 1)
+        pygame.draw.line(surface, BG_BORDER, (title_box.x + 30, card_y + 124), (title_box.right - 30, card_y + 124), 1)
 
         # Buttons positioning inside title card
-        btn_start_y = card_y + 150
-        btn_gap = 48
+        btn_start_y = card_y + 138
+        btn_gap = 43
         for i, btn in enumerate(self.buttons):
             by = btn_start_y + i * btn_gap
             btn.update_pos(center_x - btn.rect.width // 2, by)
@@ -192,13 +215,15 @@ class TitleScreenView:
         # Footer credit
         f_foot = FontManager.get(size=10, bold=False)
         foot = f_foot.render("Powered by Custom Pure-Python ADTs (CO1 - CO5) | Built for CSE Evaluation", True, TEXT_MUTED)
-        surface.blit(foot, (center_x - foot.get_width() // 2, card_y + card_h - 22))
+        surface.blit(foot, (center_x - foot.get_width() // 2, card_y + card_h - 20))
 
-        # Modals (Briefing / Controls)
+        # Modals (Briefing / Controls / How to Play)
         if self.active_modal == "BRIEFING":
             self._render_briefing_modal(surface, rect)
         elif self.active_modal == "CONTROLS":
             self._render_controls_modal(surface, rect)
+        elif self.active_modal == "HOW_TO_PLAY":
+            self.how_to_play_view.render(surface, rect)
 
     def _render_animated_threads(self, surface: pygame.Surface, rect: pygame.Rect) -> None:
         """Animate glowing red threads moving across background pins."""

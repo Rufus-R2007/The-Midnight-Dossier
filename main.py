@@ -30,6 +30,26 @@ def main() -> None:
             app._render()
             print(f"[Smoke Test] Screen #{screen_idx} rendered without error.")
 
+        # Test How to Play overlay rendering
+        app.toggle_how_to_play(True)
+        app._render()
+        print("[Smoke Test] How to Play modal overlay rendered without error.")
+        app.toggle_how_to_play(False)
+
+        # Test search autocomplete and theory toggling on Evidence Board
+        app.active_screen_idx = 1
+        app.evidence_board.search_active = True
+        app.evidence_board.search_text = "oli"
+        app.evidence_board._update_autocomplete()
+        self_check_matches = len(app.evidence_board.autocomplete_results) > 0
+        print(f"[Smoke Test] Trie search autocomplete verified: {self_check_matches}")
+
+        # Test theory toggle on evidence
+        app.evidence_board.selected_card_id = "EV-04"
+        app.evidence_board._toggle_current_theory()
+        in_theory = app.investigation_state.is_in_theory("EV-04")
+        print(f"[Smoke Test] Evidence added to theory verified: {in_theory}")
+
         # Test query execution in headless mode
         res = app.investigation_state.query_relationship("SUS-01", "EV-01", use_bfs=True)
         print(f"[Smoke Test] BFS path trace verified: {res['found']} (Edges: {res['edge_count']})")

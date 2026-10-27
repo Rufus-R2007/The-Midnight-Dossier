@@ -183,6 +183,119 @@ class TestUIComponentsAndFlow(unittest.TestCase):
         self.assertEqual(app.active_screen_idx, 1)
         self.assertEqual(app.evidence_board.selected_card_id, "SUS-01")
 
+    def test_relationship_query_input_and_trie_search(self):
+        board = EvidenceBoardView(self.state)
+        sidebar_rect = pygame.Rect(1000, 54, 366, 714)
+
+        # 1. Render sidebar so search_box_rect is populated
+        dummy_surf = pygame.Surface((1366, 768))
+        board._render_sidebar(dummy_surf, sidebar_rect)
+        self.assertIsNotNone(board.search_box_rect)
+
+        # 2. Click inside search box to activate focus
+        sb_center = board.search_box_rect.center
+        evt_click = pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": sb_center, "button": 1})
+        board.handle_event(evt_click, pygame.Rect(0, 54, 1000, 714), sidebar_rect)
+        self.assertTrue(board.search_active)
+
+        # 3. Type into search field
+        board.handle_event(pygame.event.Event(pygame.TEXTINPUT, {"text": "ol"}), pygame.Rect(0, 54, 1000, 714), sidebar_rect)
+        self.assertEqual(board.search_text, "ol")
+        self.assertGreater(len(board.autocomplete_results), 0)
+        top_name, top_meta = board.autocomplete_results[0]
+        self.assertEqual(top_meta["id"], "SUS-01")
+
+        # 4. Press Return to select top suggestion
+        evt_return = pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_RETURN, "unicode": "\r", "mod": 0})
+        board.handle_event(evt_return, pygame.Rect(0, 54, 1000, 714), sidebar_rect)
+        self.assertFalse(board.search_active)
+        self.assertEqual(board.selected_card_id, "SUS-01")
+        self.assertTrue(self.state.is_examined("SUS-01"))
+
+        # 5. Query BFS path
+        board.query_from_id = "SUS-01"
+        board.query_to_id = "LOC-01"
+        board.query_use_bfs = True
+        board._run_trace_query()
+        self.assertIsNotNone(self.state.last_query_result)
+        self.assertTrue(self.state.last_query_result["found"])
+        self.assertEqual(self.state.last_query_result["path"][0], "SUS-01")
+        self.assertEqual(self.state.last_query_result["path"][-1], "LOC-01")
+
+        # 6. Swap endpoints
+        board._swap_endpoints()
+        self.assertEqual(board.query_from_id, "LOC-01")
+        self.assertEqual(board.query_to_id, "SUS-01")
+
+        # 7. Clear query
+        board._clear_trace_query()
+        self.assertEqual(len(self.state.active_path), 0)
+        self.assertIsNone(self.state.last_query_result)
+
+    def test_case_file_dossier_controls_and_theory_toggle(self):
+        board = EvidenceBoardView(self.state)
+        sidebar_rect = pygame.Rect(1000, 54, 366, 714)
+        dummy_surf = pygame.Surface((1366, 768))
+
+        # Select evidence card EV-04
+        board.selected_card_id = "EV-04"
+        board._render_sidebar(dummy_surf, sidebar_rect)
+
+        # Verify neighbor buttons exist
+        self.assertGreater(len(board.neighbor_buttons), 0)
+        first_btn, neighbor_id = board.neighbor_buttons[0]
+
+        # Click the neighbor button to inspect connected lead
+        evt_neighbor = pygame.event.Event(pygame.MOUSEBUTTONDOWN, {"pos": first_btn.rect.center, "button": 1})
+        board.handle_event(evt_neighbor, pygame.Rect(0, 54, 1000, 714), sidebar_rect)
+        self.assertEqual(board.selected_card_id, neighbor_id)
+        self.assertTrue(self.state.is_examined(neighbor_id))
+
+        # Select EV-02 and test Add to Theory button
+        board.selected_card_id = "EV-02"
+        board._render_sidebar(dummy_surf, sidebar_rect)
+        self.assertFalse(self.state.is_in_theory("EV-02"))
+
+        board._toggle_current_theory()
+        self.assertTrue(self.state.is_in_theory("EV-02"))
+        self.assertEqual(len(self.state.theory_evidence_ids), 1)
+
+        # Toggle again to remove
+        board._toggle_current_theory()
+        self.assertFalse(self.state.is_in_theory("EV-02"))
+        self.assertEqual(len(self.state.theory_evidence_ids), 0)
+
+        # Undo restores theory
+        board._perform_undo()
+        self.assertTrue(self.state.is_in_theory("EV-02"))
+
+    def test_how_to_play_guide_modal(self):
+        closed = False
+
+        def on_close():
+            nonlocal closed
+            closed = True
+
+        from midnight_dossier.how_to_play import HowToPlayView
+        guide = HowToPlayView(on_close=on_close)
+        self.assertEqual(len(guide.steps), 6)
+        self.assertGreater(len(guide.controls), 5)
+
+        # Test close button
+        guide.handle_event(
+            pygame.event.Event(pygame.KEYDOWN, {"key": pygame.K_ESCAPE}),
+            pygame.Rect(0, 0, 1280, 720)
+        )
+        self.assertTrue(closed)
+
+        # Test app toggle
+        app = MidnightDossierApp(width=1280, height=720)
+        self.assertFalse(app.show_how_to_play)
+        app.toggle_how_to_play(True)
+        self.assertTrue(app.show_how_to_play)
+        app.toggle_how_to_play(False)
+        self.assertFalse(app.show_how_to_play)
+
 
 if __name__ == "__main__":
     unittest.main()

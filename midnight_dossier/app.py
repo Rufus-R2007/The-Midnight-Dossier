@@ -20,6 +20,7 @@ from .evidence_board import EvidenceBoardView
 from .timeline import CaseTimelineView
 from .toolkit import ToolkitView
 from .accusation import AccusationView
+from .how_to_play import HowToPlayView
 from .ui_components import UIButton
 
 
@@ -56,6 +57,10 @@ class MidnightDossierApp:
             self.investigation_state,
             on_restart_case=self.restart_investigation
         )
+        self.how_to_play_modal = HowToPlayView(
+            on_close=lambda: self.toggle_how_to_play(False)
+        )
+        self.show_how_to_play = False
 
         self.active_screen_idx = 0
         self.nav_buttons: list[UIButton] = []
@@ -68,20 +73,30 @@ class MidnightDossierApp:
             ("Case Timeline", 2),
             ("Detective's Toolkit", 3),
             ("Final Accusation", 4),
+            ("How to Play", 5),
         ]
         self.nav_buttons = []
         for name, idx in items:
             btn = UIButton(
-                pygame.Rect(0, 0, 120, 32),
+                pygame.Rect(0, 0, 112, 32),
                 name,
-                callback=lambda i=idx: self.switch_screen(i),
+                callback=(lambda: self.toggle_how_to_play(True)) if idx == 5 else (lambda i=idx: self.switch_screen(i)),
                 font_size=11,
                 border_radius=4
             )
             btn.target_screen = idx
             self.nav_buttons.append(btn)
 
+    def toggle_how_to_play(self, show: Optional[bool] = None) -> None:
+        if show is None:
+            self.show_how_to_play = not self.show_how_to_play
+        else:
+            self.show_how_to_play = show
+
     def switch_screen(self, screen_idx: int) -> None:
+        if screen_idx == 4:
+            # Sync active theory items directly into accusation view
+            self.accusation_view.selected_evidence_ids.update(self.investigation_state.theory_evidence_ids)
         self.active_screen_idx = screen_idx
 
     def locate_entity_on_board(self, entity_id: str) -> None:
@@ -124,32 +139,44 @@ class MidnightDossierApp:
         pygame.quit()
 
     def _handle_events(self) -> None:
+        full_rect = pygame.Rect(0, 0, self.width, self.height)
+        content_rect = self._get_content_rect()
+
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.running = False
+                return
 
             elif event.type == pygame.VIDEORESIZE:
                 self.width = max(1024, event.w)
                 self.height = max(680, event.h)
                 self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
 
+            # If How to Play modal is active, route all events directly to it
+            if self.show_how_to_play:
+                self.how_to_play_modal.handle_event(event, full_rect)
+                continue
+
             elif event.type == pygame.KEYDOWN:
-                # Top-level navigation shortcuts (0, 1, 2, 3, 4)
+                # Top-level navigation shortcuts (0, 1, 2, 3, 4, H)
                 if not getattr(self.evidence_board, "search_active", False):
-                    if event.key == pygame.K_0 or (event.key == pygame.K_ESCAPE and self.active_screen_idx != 0):
+                    if event.key == pygame.K_h:
+                        self.toggle_how_to_play()
+                        continue
+                    elif event.key == pygame.K_0 or (event.key == pygame.K_ESCAPE and self.active_screen_idx != 0):
                         # On screens 1-4, ESC returns to title menu
                         if self.active_screen_idx == 4 and self.accusation_view.verdict_result:
                             pass  # Let accusation view handle closing its verdict modal
                         else:
                             self.active_screen_idx = 0
                     elif event.key == pygame.K_1:
-                        self.active_screen_idx = 1
+                        self.switch_screen(1)
                     elif event.key == pygame.K_2:
-                        self.active_screen_idx = 2
+                        self.switch_screen(2)
                     elif event.key == pygame.K_3:
-                        self.active_screen_idx = 3
+                        self.switch_screen(3)
                     elif event.key == pygame.K_4:
-                        self.active_screen_idx = 4
+                        self.switch_screen(4)
 
             # Route top navigation bar clicks on screens 1 - 4
             if self.active_screen_idx != 0:
@@ -166,9 +193,6 @@ class MidnightDossierApp:
                         continue
 
             # Route events to active view
-            full_rect = pygame.Rect(0, 0, self.width, self.height)
-            content_rect = self._get_content_rect()
-
             if self.active_screen_idx == 0:
                 self.title_screen.handle_event(event, full_rect)
             elif self.active_screen_idx == 1:
@@ -212,6 +236,10 @@ class MidnightDossierApp:
             elif self.active_screen_idx == 4:
                 self.accusation_view.render(self.screen, content_rect)
 
+        # If How to Play modal is active, render on top of current view as overlay
+        if self.show_how_to_play:
+            self.how_to_play_modal.render(self.screen, full_rect)
+
     def _get_content_rect(self) -> pygame.Rect:
         return pygame.Rect(0, 54, self.width, self.height - 54)
 
@@ -236,25 +264,28 @@ class MidnightDossierApp:
         sub_s = f_sub.render("CASE 001: THE BLACKWOOD HEIST", True, TEXT_LIGHT)
         self.screen.blit(sub_s, (20, 30))
 
-        # Investigation Progress
+        # Investigation Progress & Theory Counts
         metrics = self.investigation_state.get_progress_metrics()
-        px = 330
-        py = 14
+        px = 300
+        py = 13
 
-        prog_txt = f"Progress: {metrics['progress_percent']}%  (Clues: {metrics['examined_evidence_count']}/{metrics['total_evidence_count']})"
+        prog_txt = f"Progress: {metrics['progress_percent']}%  (Clues: {metrics['examined_evidence_count']}/{metrics['total_evidence_count']} | Theory: {metrics['theory_items_count']}/5)"
         self.screen.blit(f_tiny.render(prog_txt, True, TEXT_CYAN), (px, py))
 
-        pbar_rect = pygame.Rect(px, py + 16, 150, 6)
+        pbar_rect = pygame.Rect(px, py + 16, 140, 6)
         pygame.draw.rect(self.screen, BG_PANEL_ALT, pbar_rect, border_radius=3)
-        fill_w = int(150 * (metrics["progress_percent"] / 100))
+        fill_w = int(140 * (metrics["progress_percent"] / 100))
         if fill_w > 0:
             pygame.draw.rect(self.screen, COLOR_VERIFIED, (px, py + 16, fill_w, 6), border_radius=3)
 
         # Compact Navigation Buttons with Unified Hitboxes
-        btn_w = 122
-        nav_start_x = self.width - (len(self.nav_buttons) * (btn_w + 6) + 16)
+        btn_w = 108
+        nav_start_x = self.width - (len(self.nav_buttons) * (btn_w + 5) + 14)
         for i, btn in enumerate(self.nav_buttons):
-            bx = nav_start_x + i * (btn_w + 6)
+            bx = nav_start_x + i * (btn_w + 5)
             btn.update_pos(bx, 11, btn_w, 32)
-            btn.is_active = (getattr(btn, "target_screen", -1) == self.active_screen_idx)
+            if getattr(btn, "target_screen", -1) == 5:
+                btn.is_active = self.show_how_to_play
+            else:
+                btn.is_active = (getattr(btn, "target_screen", -1) == self.active_screen_idx and not self.show_how_to_play)
             btn.render(self.screen)
